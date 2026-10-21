@@ -1,0 +1,264 @@
+# ============================================================
+# DevAgent — Multi-Agent Orchestration System
+# pyproject.toml — Project metadata, dependencies, tool configs
+# ============================================================
+# Uses PEP 621 metadata + pip/uv for dependency management.
+# Dependencies are grouped by phase so you can install
+# incrementally as we build each layer.
+# ============================================================
+
+[project]
+name = "devagent"
+version = "0.1.0"
+description = "DevAgent — Production-grade Multi-Agent Orchestration System with MCP integration"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Teja Mogadala", email = "mogadalateja2002@gmail.com" },
+]
+keywords = [
+    "multi-agent",
+    "orchestration",
+    "langgraph",
+    "langchain",
+    "mcp",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# ----------------------------------------------------------
+# Core Dependencies — Always installed
+# ----------------------------------------------------------
+dependencies = [
+    # --- LLM & Agent Frameworks ---
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-community>=0.3.0",
+    "langgraph>=0.2.0",
+
+    # --- LLM Providers ---
+    "langchain-google-genai>=2.0.0",       # Google Gemini (primary)
+    "langchain-openai>=0.2.0",             # OpenAI / Azure OpenAI
+    "langchain-anthropic>=0.2.0",          # Anthropic Claude
+
+    # --- Data Validation & Settings ---
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+
+    # --- API Layer ---
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "websockets>=13.0",
+    "python-multipart>=0.0.9",             # File uploads in FastAPI
+    "python-jose[cryptography]>=3.3.0",    # JWT encoding/decoding
+
+    # --- HTTP Client ---
+    "httpx>=0.27.0",                       # Async HTTP for tools & integrations
+
+    # --- Database: PostgreSQL ---
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",                     # Async PostgreSQL driver
+    "alembic>=1.13.0",                     # Database migrations
+
+    # --- Database: Redis ---
+    "redis[hiredis]>=5.0.0",               # Redis with C parser for performance
+
+    # --- Vector Store: Pinecone ---
+    "pinecone-client>=3.0.0",
+
+    # --- Embeddings ---
+    "langchain-huggingface>=0.1.0",        # Fallback embeddings (free, local)
+
+    # --- MCP (Model Context Protocol) ---
+    "mcp>=1.0.0",                          # MCP Python SDK
+
+    # --- Tools ---
+    "tavily-python>=0.5.0",               # Web search API
+    "PyGithub>=2.1.0",                     # GitHub API client
+
+    # --- Monitoring & Observability ---
+    "opentelemetry-api>=1.25.0",
+    "opentelemetry-sdk>=1.25.0",
+    "opentelemetry-exporter-otlp>=1.25.0",
+    "opentelemetry-instrumentation-fastapi>=0.46b0",
+    "opentelemetry-instrumentation-httpx>=0.46b0",
+    "prometheus-client>=0.21.0",
+
+    # --- External Integrations ---
+    "slack-sdk>=3.27.0",
+    "notion-client>=2.2.0",
+
+    # --- Utilities ---
+    "structlog>=24.1.0",                   # Structured logging
+    "tenacity>=9.0.0",                     # Retry with backoff
+    "tiktoken>=0.7.0",                     # Token counting for cost tracking
+]
+
+# ----------------------------------------------------------
+# Optional Dependency Groups — Install as needed
+# ----------------------------------------------------------
+[project.optional-dependencies]
+
+# Development tools: pip install -e ".[dev]"
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-timeout>=2.3.0",
+    "ruff>=0.6.0",                         # Linting + formatting
+    "mypy>=1.11.0",                        # Static type checking
+    "pre-commit>=3.7.0",                   # Git hook manager
+    "ipython>=8.26.0",                     # Enhanced REPL for debugging
+    "rich>=13.7.0",                        # Pretty terminal output
+]
+
+# Testing only: pip install -e ".[test]"
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-timeout>=2.3.0",
+    "fakeredis>=2.23.0",                   # In-memory Redis for testing
+    "factory-boy>=3.3.0",                  # Test data factories
+    "httpx>=0.27.0",                       # TestClient for FastAPI
+    "respx>=0.21.0",                       # Mock httpx requests
+]
+
+# Documentation: pip install -e ".[docs]"
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.25.0",
+]
+
+# ----------------------------------------------------------
+# Entry Points
+# ----------------------------------------------------------
+[project.scripts]
+devagent = "src.api.main:run"             # CLI entry: `devagent` starts the server
+devagent-mcp = "src.mcp.server:run"       # CLI entry: `devagent-mcp` starts MCP server
+
+# ----------------------------------------------------------
+# Build System
+# ----------------------------------------------------------
+[build-system]
+requires = ["setuptools>=70.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+# ----------------------------------------------------------
+# Ruff — Linting & Formatting (replaces black, isort, flake8)
+# ----------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",       # pycodestyle errors
+    "W",       # pycodestyle warnings
+    "F",       # pyflakes
+    "I",       # isort (import sorting)
+    "N",       # pep8-naming
+    "UP",      # pyupgrade
+    "B",       # flake8-bugbear
+    "SIM",     # flake8-simplify
+    "TCH",     # type-checking imports
+    "RUF",     # ruff-specific rules
+    "ASYNC",   # async best practices
+    "S",       # security (bandit)
+    "T20",     # no print() in production code
+]
+ignore = [
+    "S101",    # Allow assert in tests
+    "S104",    # Allow binding to 0.0.0.0 (needed for Docker)
+    "T201",    # Allow print() — we use structlog, but scripts may print
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S106", "T201"]   # Relax rules in tests
+"scripts/**/*.py" = ["T201"]                  # Allow print in scripts
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+# ----------------------------------------------------------
+# Mypy — Static Type Checking
+# ----------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+
+# Ignore missing stubs for third-party libraries
+[[tool.mypy.overrides]]
+module = [
+    "tavily.*",
+    "pinecone.*",
+    "github.*",
+    "slack_sdk.*",
+    "notion_client.*",
+    "mcp.*",
+    "redis.*",
+]
+ignore_missing_imports = true
+
+# ----------------------------------------------------------
+# Pytest — Test Configuration
+# ----------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"                      # Auto-detect async tests
+timeout = 30                               # Default test timeout (seconds)
+markers = [
+    "unit: Unit tests (no external services)",
+    "integration: Integration tests (requires Docker services)",
+    "slow: Slow tests (skipped by default)",
+]
+addopts = [
+    "-v",                                  # Verbose output
+    "--strict-markers",                    # Error on unknown markers
+    "--tb=short",                          # Short tracebacks
+    "-m", "not slow",                      # Skip slow tests by default
+]
+
+# ----------------------------------------------------------
+# Coverage — Test Coverage Reporting
+# ----------------------------------------------------------
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "src/api/main.py",                     # App entry point — tested via integration
+    "src/*/__init__.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+fail_under = 80                            # Fail if coverage drops below 80%
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+    "@abstractmethod",
+]

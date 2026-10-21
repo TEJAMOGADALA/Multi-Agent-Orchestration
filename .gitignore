@@ -1,0 +1,218 @@
+# ============================================================
+# DevAgent — Multi-Agent Orchestration System
+# .gitignore — Excludes secrets, caches, build artifacts, IDE
+# ============================================================
+
+# ----------------------------------------------------------
+# 1. SECRETS & ENVIRONMENT FILES
+# ----------------------------------------------------------
+# CRITICAL: Never commit API keys, database credentials,
+# or MCP server tokens. Only .env.example is tracked.
+.env
+.env.local
+.env.production
+.env.staging
+.env.*.local
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+
+# ----------------------------------------------------------
+# 2. PYTHON
+# ----------------------------------------------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+eggs/
+wheels/
+sdist/
+develop-eggs/
+.installed.cfg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+nosetests.xml
+
+# mypy
+.mypy_cache/
+dmypy.json
+
+# ruff
+.ruff_cache/
+
+# pyright
+pyrightconfig.json
+
+# Type checking
+.pytype/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# ----------------------------------------------------------
+# 3. DOCKER
+# ----------------------------------------------------------
+# Docker build context artifacts (not the config files)
+*.tar
+docker-compose.override.yml
+
+# ----------------------------------------------------------
+# 4. KUBERNETES
+# ----------------------------------------------------------
+# Generated K8s manifests with secrets baked in
+infrastructure/k8s/*-secret.yaml
+infrastructure/k8s/generated/
+kubeconfig
+*.kubeconfig
+
+# Helm
+infrastructure/k8s/charts/*.tgz
+
+# ----------------------------------------------------------
+# 5. IDE & EDITORS
+# ----------------------------------------------------------
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (PyCharm, IntelliJ)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ----------------------------------------------------------
+# 6. OS FILES
+# ----------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# ----------------------------------------------------------
+# 7. DATABASES & STORAGE
+# ----------------------------------------------------------
+# Local database files
+*.db
+*.sqlite3
+*.sql.bak
+
+# Redis dump
+dump.rdb
+
+# PostgreSQL
+*.pgdata/
+
+# ----------------------------------------------------------
+# 8. LOGS & MONITORING
+# ----------------------------------------------------------
+logs/
+*.log
+*.log.*
+
+# OpenTelemetry local exports
+otel-exports/
+traces/
+
+# Prometheus local data
+prometheus-data/
+
+# Grafana local data
+grafana-data/
+
+# ----------------------------------------------------------
+# 9. MCP (Model Context Protocol)
+# ----------------------------------------------------------
+# MCP server runtime artifacts
+.mcp/
+mcp-cache/
+
+# MCP local state (sessions, discovery cache)
+.mcp_state/
+
+# DO NOT ignore mcp_config.json — that IS tracked
+# (it contains server definitions, not secrets)
+
+# ----------------------------------------------------------
+# 10. LLM & AI ARTIFACTS
+# ----------------------------------------------------------
+# Model downloads / caches
+models/
+*.gguf
+*.bin
+*.safetensors
+
+# LangChain / LangGraph checkpoints (local)
+.langgraph_checkpoints/
+.langchain_cache/
+
+# Pinecone local index files
+pinecone-data/
+
+# ----------------------------------------------------------
+# 11. BUILD & CI/CD
+# ----------------------------------------------------------
+# Node (if any frontend tooling is added later)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Terraform (if IaC is added)
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# General build artifacts
+*.o
+*.so
+*.dylib
