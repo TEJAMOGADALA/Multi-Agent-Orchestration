@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import HTTPException, Request, Security, status
@@ -139,8 +139,8 @@ class TaskRuntime:
 
 
 def get_task_runtime(request: Request) -> TaskRuntime:
-    return request.app.state.task_runtime
+    return cast("TaskRuntime", request.app.state.task_runtime)
 
 
 def get_websocket_runtime(websocket: Any) -> TaskRuntime:
-    return websocket.app.state.task_runtime
+    return cast("TaskRuntime", websocket.app.state.task_runtime)
