@@ -30,12 +30,22 @@
   - [High-Performance Caching & Shared Agent Memory (`src/db/redis_client.py`)](#high-performance-caching--shared-agent-memory-srcdbredis_clientpy)
   - [Unified Package Facades (`src/models/__init__.py` & `src/db/__init__.py`)](#unified-package-facades-srcmodels__init__py--srcdb__init__py)
   - [Production Safeguards & Architectural Invariants](#production-safeguards--architectural-invariants)
-- [4. Interactive Execution Trace & Metric Lifecycle](#4-interactive-execution-trace--metric-lifecycle)
+- [4. Phase 3 Deep-Dive: Core Orchestration Engine & Agent Framework](#4-phase-3-deep-dive-core-orchestration-engine--agent-framework)
+  - [Multi-Provider LLM Abstraction & Automatic Failover (`src/llm/`)](#multi-provider-llm-abstraction--automatic-failover-srcllm)
+  - [Async Token & Cost Accounting Engine (`src/llm/callbacks.py`)](#async-token--cost-accounting-engine-srcllmcallbackspy)
+  - [Tool Abstraction Layer & LangChain Adapter (`src/tools/`)](#tool-abstraction-layer--langchain-adapter-srctools)
+  - [Base Agent ReAct Subgraph & Execution Loop (`src/agents/base.py`)](#base-agent-react-subgraph--execution-loop-srcagentsbasepy)
+  - [Specialized Agent Registry & Factory (`src/agents/registry.py`)](#specialized-agent-registry--factory-srcagentsregistrypy)
+  - [Topological Task Decomposition & DAG Validation (`src/orchestrator/planner.py`)](#topological-task-decomposition--dag-validation-srcorchestratorplannerpy)
+  - [Dependency-Aware Concurrent Dispatcher (`src/orchestrator/dispatcher.py`)](#dependency-aware-concurrent-dispatcher-srcorchestratordispatcherpy)
+  - [Top-Level Orchestration Pipeline & Graph Engine (`src/orchestrator/engine.py`)](#top-level-orchestration-pipeline--graph-engine-srcorchestratorenginepy)
+  - [Phase 3 Production Safeguards & Resilience Matrix](#phase-3-production-safeguards--resilience-matrix)
+- [5. Interactive Execution Trace & Metric Lifecycle](#5-interactive-execution-trace--metric-lifecycle)
   - [End-to-End Execution Walkthrough: "Research & Benchmark Vector Stores"](#end-to-end-execution-walkthrough-research--benchmark-vector-stores)
   - [Step-by-Step State Mutation Trace](#step-by-step-state-mutation-trace)
   - [Token, Latency, and Financial Cost Lifecycle](#token-latency-and-financial-cost-lifecycle)
-- [Repository Structure](#repository-structure)
-- [Getting Started](#getting-started)
+- [6. Repository Structure](#6-repository-structure)
+- [7. Getting Started](#7-getting-started)
 
 ---
 
@@ -518,7 +528,353 @@ To prevent circular imports and simplify import statements, Phase 2 exposes clea
 
 ---
 
-## 4. Interactive Execution Trace & Metric Lifecycle
+## 4. Phase 3 Deep-Dive: Core Orchestration Engine & Agent Framework
+
+Phase 3 introduces the autonomous cognitive core of DevAgent. Building directly upon the infrastructure of Phase 1 and the data contracts and persistence engines of Phase 2, Phase 3 implements the active execution loop: multi-provider LLM abstraction with native failover, token and cost accounting, tool abstraction, bounded ReAct agent loops, topological task decomposition, concurrent dependency-aware dispatching, validation gates, and consensus-driven synthesis.
+
+```
+       ┌────────────────────────────────────────────────────────┐
+       │             User Objective: TaskCreate                 │
+       └──────────────────────────┬─────────────────────────────┘
+                                  │
+                                  ▼
+       ┌────────────────────────────────────────────────────────┐
+       │       Planner Node (LLM + Strict DAG Validation)       │
+       │     - Decomposes into ordered SubTasks (UUIDs)         │
+       │     - DFS Cycle Detection (visiting/visited sets)      │
+       │     - Persists SubTaskRecords to PostgreSQL            │
+       └──────────────────────────┬─────────────────────────────┘
+                                  │
+                                  ▼
+       ┌────────────────────────────────────────────────────────┐
+       │   Dispatcher Node (Topological Concurrent Scheduler)   │
+       │     - Resolves unblocked DAG tiers iteratively         │
+       │     - Concurrency throttling (asyncio.Semaphore)       │
+       │     - Injects shared context from predecessor tasks    │
+       │     - Self-healing retry loop (AGENT_MAX_RETRIES)      │
+       └──────────────────────────┬─────────────────────────────┘
+                                  │
+                  ┌───────────────┴───────────────┐
+                  ▼                               ▼
+       ┌──────────────────────┐        ┌──────────────────────┐
+       │ Specialized Agent 1  │        │ Specialized Agent 2  │
+       │ (ReAct State Machine)│        │ (ReAct State Machine)│
+       │  reason ⇄ act ⇄ fin  │        │  reason ⇄ act ⇄ fin  │
+       └──────────┬───────────┘        └──────────┬───────────┘
+                  │                               │
+                  └───────────────┬───────────────┘
+                                  │ SubTaskResults
+                                  ▼
+       ┌────────────────────────────────────────────────────────┐
+       │        Validator Node (Schema & Quality Gate)          │
+       │     - Inspects SubTaskResult models and confidence     │
+       │     - Verifies non-empty output and error flags        │
+       └──────────────────────────┬─────────────────────────────┘
+                                  │
+                  ┌───────────────┴───────────────┐
+         Valid    ▼                               ▼   Invalid / Retry Exhausted
+       ┌──────────────────────┐        ┌──────────────────────┐
+       │   Synthesizer Node   │        │  Error Handler Node  │
+       │ - Weighted Confidence│        │ - Consolidates Errors│
+       │ - Source Deduplication│       │ - Sets status=FAILED │
+       │ - Emits TaskResult   │        │ - Audit Logging      │
+       └──────────┬───────────┘        └──────────┬───────────┘
+                  │                               │
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+       ┌────────────────────────────────────────────────────────┐
+       │       OrchestratorEngine (TaskResponse Emission)       │
+       │     - Persists completed TaskRecord to PostgreSQL      │
+       │     - Enforces global timeout (ORCHESTRATOR_TIMEOUT)   │
+       └────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Multi-Provider LLM Abstraction & Automatic Failover (`src/llm/`)
+
+* **File Location:** [`src/llm/factory.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/factory.py) & [`src/llm/__init__.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/__init__.py)
+* **Architecture Role:** Serves as the single, centralized gateway to all Large Language Model providers. Decouples the agent framework from concrete vendor SDKs, provides lazy runtime imports to minimize memory overhead, and orchestrates automatic model failover if the primary provider experiences outages, timeouts, or rate limits.
+* **Component Walkthrough:**
+
+| Function / Component | Signature & Parameters | Architectural Role & Implementation Details |
+|:---|:---|:---|
+| [`create_chat_model`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/factory.py#L18) | `provider: LLMProvider \| str, model: str, temperature: float \| None = None, max_tokens: int \| None = None, **kwargs: Any) -> Any` | Dynamic chat model factory. Performs **lazy SDK loading** (`langchain_openai`, `langchain_anthropic`, `langchain_google_genai`) so unused provider libraries are never imported into process memory. Retrieves secrets via `SecretStr.get_secret_value()`, injects `settings.LLM_REQUEST_TIMEOUT`, and returns an initialized LangChain `BaseChatModel`. |
+| [`get_primary_llm`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/factory.py#L81) | `(**kwargs: Any) -> Any` | Convenience helper that instantiates the active primary model specified by `settings.LLM_PROVIDER` and `settings.LLM_MODEL`. |
+| [`get_fallback_llm`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/factory.py#L86) | `(**kwargs: Any) -> Any \| None` | Instantiates the secondary failover model using `settings.LLM_FALLBACK_PROVIDER`, `settings.LLM_FALLBACK_MODEL`, and `settings.LLM_FALLBACK_API_KEY`. Returns `None` if failover is unconfigured. |
+| [`get_llm_with_fallback`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/factory.py#L99) | `(**kwargs: Any) -> Any` | Wraps the primary LLM with LangChain's native `.with_fallbacks([fallback])`. If the primary provider encounters network timeouts, 429 rate limits, or 5xx outages, LangChain transparently catches the failure and falls back to the secondary model with zero dropped requests. |
+| [`estimate_token_count`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/factory.py#L105) | `(text: str, model: str = "gpt-4o-mini") -> int` | High-speed local token estimator using `tiktoken`. If the model encoding is unrecognized or tiktoken fails, gracefully degrades to a conservative character heuristic: `max(1, (len(text) + 3) // 4)`. |
+| [`calculate_cost`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/factory.py#L115) | `(prompt_tokens: int, completion_tokens: int, model: str) -> float` | Computes USD financial costs using the pricing matrix in [`LLM_COST_PER_MILLION_TOKENS`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/config/constants.py#L230). Features model prefix matching (e.g. matching `claude-3-5-sonnet-20241022` to `claude-3-5-sonnet`). |
+
+---
+
+### Async Token & Cost Accounting Engine (`src/llm/callbacks.py`)
+
+* **File Location:** [`src/llm/callbacks.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/callbacks.py)
+* **Architecture Role:** Provides non-blocking, multi-provider token consumption and financial cost auditing. Intercepts LLM completion events to capture real-time resource utilization without adding overhead to inference latency.
+* **Component Walkthrough:**
+
+```mermaid
+flowchart LR
+    LLM[LLM Provider Response] -->|on_llm_end| Callback[TokenTrackingCallback]
+    Callback -->|Extract Usage| Inspector{Payload Format}
+    Inspector -->|OpenAI| U1["llm_output['token_usage']"]
+    Inspector -->|Google / Anthropic| U2["llm_output['usage_metadata']"]
+    Inspector -->|Generational| U3["generation[0][0].message.usage_metadata"]
+    U1 & U2 & U3 --> Accumulator[Accumulate prompt & completion tokens]
+    Accumulator --> Snapshot[get_usage_snapshot]
+    Snapshot --> Cost[calculate_cost: USD]
+    Cost --> Metric[(PostgreSQL AgentMetric)]
+```
+
+* **Thread-Isolated Callback Lifecycle:**
+  * Subclasses LangChain's `AsyncCallbackHandler`.
+  * Instantiated per agent execution (`BaseAgent._callback = TokenTrackingCallback(...)`), guaranteeing that concurrent agent executions never cross-contaminate token counts.
+  * Captures variations across LLM provider metadata formats: seamlessly parses `token_usage`, `usage_metadata`, or generational message metadata.
+  * [`get_usage_snapshot()`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/callbacks.py#L30): Returns a normalized dictionary containing `prompt_tokens`, `completion_tokens`, `total_tokens`, and `cost_usd`.
+  * [`reset()`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/callbacks.py#L40): Resets accumulator counters between task invocations.
+
+---
+
+### Tool Abstraction Layer & LangChain Adapter (`src/tools/`)
+
+* **File Location:** [`src/tools/base.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/tools/base.py) & [`src/tools/__init__.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/tools/__init__.py)
+* **Architecture Role:** Establishes the contract for internal agent tools and external Model Context Protocol (MCP) tool bindings. Provides thread-safe registration, agent-specific tool filtering, exception shielding, latency benchmarking, and seamless transformation into LangChain `StructuredTool` instances.
+* **Component Walkthrough:**
+
+| Component | Type | Architectural Purpose |
+|:---|:---|:---|
+| [`ToolResult`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/tools/base.py#L17) | `dataclass(slots=True)` | Standardized return envelope containing: `result: Any`, `error: str \| None`, `is_error: bool`, `duration_seconds: float`, and `metadata: dict[str, Any]`. Prevents unhandled exceptions from propagating into the agent loop. |
+| [`BaseTool`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/tools/base.py#L26) | `ABC` | Abstract base class declaring: `name: ClassVar[str]`, `description: ClassVar[str]`, `args_schema: ClassVar[type[BaseModel] \| None]`, `supported_agents: ClassVar[set[AgentType]]`, and `source: ClassVar[MCPToolSource] = MCPToolSource.INTERNAL`. Requires implementing `async def execute(**kwargs) -> ToolResult`. |
+| [`ToolRegistry`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/tools/base.py#L38) | Thread-Safe Singleton | Manages runtime tool discovery with `threading.RLock` synchronization. Provides `register(tool)`, `get(name)`, `list_tools()`, and `get_tools_for_agent(agent_type)` to enforce role-based tool isolation. |
+| [`_run_tool`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/tools/base.py#L79) | `async function` | Protective execution wrapper. Benchmarks wall-clock execution time via `time.perf_counter()` and shields the agent ReAct loop by catching arbitrary runtime exceptions, converting them into `{is_error: True, error: str(exc)}` payloads. |
+| [`tool_to_langchain`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/tools/base.py#L101) | Adapter Function | Converts any `BaseTool` into a LangChain `StructuredTool.from_function` with async coroutine binding, enabling transparent registration with `llm.bind_tools()`. |
+
+---
+
+### Base Agent ReAct Subgraph & Execution Loop (`src/agents/base.py`)
+
+* **File Location:** [`src/agents/base.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py) & [`src/agents/__init__.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/__init__.py)
+* **Architecture Role:** Encapsulates the core autonomous reasoning engine. Implements the **Reason + Act (ReAct)** cognitive architecture as a compiled LangGraph `StateGraph(AgentState)` subgraph that is inherited and reused by all specialized agents.
+* **The ReAct State Machine:**
+
+```mermaid
+stateDiagram-v2
+    [*] --> START
+    START --> reason: Initialize System & Subtask Prompt
+    state reason {
+        [*] --> LLM_Inference
+        LLM_Inference --> Inspect_Tool_Calls
+    }
+    reason --> act: pending_tool_calls > 0 AND iteration < max_iterations
+    reason --> finalize: pending_tool_calls == 0 OR iteration >= max_iterations
+    state act {
+        [*] --> Lookup_ToolRegistry
+        Lookup_ToolRegistry --> Execute_Protected
+        Execute_Protected --> Append_ToolMessage
+    }
+    act --> reason: Next Cognitive Turn
+    state finalize {
+        [*] --> Format_SubTaskResult
+        Format_SubTaskResult --> Extract_Source_URLs
+        Extract_Source_URLs --> Snapshot_Token_Metrics
+    }
+    finalize --> END
+    END --> [*]
+```
+
+* **Node Execution Mechanics:**
+  1. **Reason Node ([`_reason_node`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L67)):**
+     * Builds context-aware system messages by formatting role instructions with the subtask description and serialized `shared_context` from predecessor subtasks.
+     * Invokes `_reasoning_llm` attached to `TokenTrackingCallback`.
+     * Clamps returned tool calls to `AGENT_TOOL_CALL_MAX_PER_TURN` (default: 5) to prevent combinatorial explosion.
+     * Increments `iteration_count` and updates `pending_tool_calls`.
+  2. **Act Node ([`_act_node`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L89)):**
+     * Iterates over `pending_tool_calls`, resolves corresponding `BaseTool` from `ToolRegistry`, and safely executes via `_run_tool`.
+     * Appends detailed audit entries to `tool_calls` state and creates LangChain `ToolMessage` instances for the LLM's conversation history.
+     * Flushes `pending_tool_calls`.
+  3. **Conditional Loop Guard ([`_should_continue`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L112)):**
+     * Checks `iteration_count >= max_iterations` (default: 10). If exceeded, forcibly halts the loop and routes to `finalize`.
+     * If `pending_tool_calls` are present, routes to `act`.
+     * If no tool calls are requested, routes to `finalize`.
+  4. **Finalize Node ([`_finalize_node`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L117)):**
+     * Sanitizes final answer content and sets fallback error messages if unproduced.
+     * Extracts cited URLs using regex matching (`r"https?://[^\s)]+"`).
+     * Extracts token and cost snapshots from `TokenTrackingCallback`.
+     * Emits a validated [SubTaskResult](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/models/schemas.py#L442) payload with confidence scoring and execution status.
+  5. **Invocation Entrypoint ([`invoke`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L142)):**
+     * Resets callback metrics, records wall-clock duration with `perf_counter()`, compiles and invokes the graph, and attaches `duration_seconds` to the result.
+
+---
+
+### Specialized Agent Registry & Factory (`src/agents/registry.py`)
+
+* **File Location:** [`src/agents/registry.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/registry.py)
+* **Architecture Role:** Provides a dynamic polymorphic factory that instantiates specialized agent personas with role-tuned system prompts, dedicated tool matrices, and isolated execution scopes.
+* **Component Walkthrough:**
+
+| Specialized Agent | Base Class | System Prompt Binding | Core Specialization & Tools |
+|:---|:---|:---|:---|
+| [`ResearchAgent`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/registry.py#L16) | [`BaseAgent`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L21) | [`RESEARCH_AGENT_SYSTEM_PROMPT`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/config/constants.py#L263) | Web exploration, technical documentation ingestion, literature search, and source-attributed fact gathering. Automatically filters tools bound to `AgentType.RESEARCH`. |
+| [`CodingAgent`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/registry.py#L21) | [`BaseAgent`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L21) | [`CODING_AGENT_SYSTEM_PROMPT`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/config/constants.py#L275) | Polyglot code generation, software architecture, debugging, unit test creation, and sandboxed execution. Automatically filters tools bound to `AgentType.CODING`. |
+| [`AnalysisAgent`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/registry.py#L26) | [`BaseAgent`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L21) | [`ANALYSIS_AGENT_SYSTEM_PROMPT`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/config/constants.py#L287) | Quantitative benchmarking, database querying, statistical modeling, latency/cost profiling, and data visualization. Automatically filters tools bound to `AgentType.ANALYSIS`. |
+| [`AgentRegistry`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/registry.py#L31) | Class-Level Factory | `create_agent(agent_type: AgentType \| str, **kwargs: Any) -> BaseAgent` | Resolves string or enum agent identifiers, verifies registration, and returns an initialized, isolated specialized agent instance. |
+
+---
+
+### Topological Task Decomposition & DAG Validation (`src/orchestrator/planner.py`)
+
+* **File Location:** [`src/orchestrator/planner.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/planner.py) & [`src/orchestrator/__init__.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/__init__.py)
+* **Architecture Role:** Acts as the cognitive entrypoint of the orchestration pipeline. Decomposes unstructured natural language objectives into a strictly validated Directed Acyclic Graph (DAG) of subtasks, establishes dependency edges, and persists the execution blueprint to PostgreSQL.
+* **Component Walkthrough:**
+
+```mermaid
+flowchart TD
+    UserReq[User Task Description] --> PlannerNode
+    PlannerNode -->|with_structured_output| LLM[LLM Decomposition]
+    LLM --> PlanSchema[PlanSchema: PlannedSubtasks]
+    PlanSchema --> ValidateCount{Count <= max_subtasks?}
+    ValidateCount -- No --> ErrLimit[Raise ValueError: Subtask Limit]
+    ValidateCount -- Yes --> ValidateIndices{Dependencies < Current Index?}
+    ValidateIndices -- No --> ErrDep[Raise ValueError: Non-preceding Dependency]
+    ValidateIndices -- Yes --> DFS[DFS Cycle Detection: visiting / visited]
+    DFS -- Cycle Detected --> ErrCycle[Raise ValueError: Circular Dependency]
+    DFS -- Acyclic --> UUIDMapping[Translate Indexes to UUIDs]
+    UUIDMapping --> PersistDB[(INSERT INTO subtasks)]
+    PersistDB --> ReturnState[Return OrchestratorState: EXECUTING]
+```
+
+* **Structured Planning Contracts:**
+  * [`PlannedSubtask(BaseModel)`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/planner.py#L19): Defines `description: str`, `agent_type: AgentType`, `order: int`, `dependencies: list[int]` (zero-based integer indices of prerequisite subtasks), and `tools_required: list[str]`.
+  * [`PlanSchema(BaseModel)`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/planner.py#L29): Wraps `subtasks: list[PlannedSubtask]` and `reasoning: str`.
+* **Topological Cycle Detection Algorithm ([`_validate_dag`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/planner.py#L40)):**
+  * Constructs an adjacency list representing the dependency graph.
+  * Ensures all declared dependency IDs exist in the generated subtask set.
+  * Executes a recursive Depth-First Search (DFS) utilizing two tracking sets: `visiting` (current branch exploration) and `visited` (fully explored nodes). If a node in `visiting` is re-encountered, it proves a directed cycle exists and immediately rejects the plan with a `ValueError`.
+* **UUID Translation & State Materialization:**
+  * Converts integer dependencies (`item.dependencies: [0]`) into deterministic UUID strings.
+  * Populates `subtask_states` dictionary with initialized `SubTaskStatus.PENDING` states.
+  * Sets `status = TaskStatus.EXECUTING` and queues `pending_subtasks`.
+* **Relational Persistence ([`_persist_plan`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/planner.py#L104)):**
+  * Inserts [SubTaskRecord](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/models/database.py#L292) instances into PostgreSQL via async connection pool. Gracefully catches `RuntimeError` if the database session is not started, allowing offline unit testing without a live database.
+
+---
+
+### Dependency-Aware Concurrent Dispatcher (`src/orchestrator/dispatcher.py`)
+
+* **File Location:** [`src/orchestrator/dispatcher.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py)
+* **Architecture Role:** Serves as the high-throughput DAG scheduler. Evaluates subtask readiness, manages parallel agent executions under strict semaphore concurrency limits, injects cross-agent shared memory context, and drives an in-place self-healing retry engine.
+* **Component Walkthrough:**
+
+```mermaid
+flowchart TD
+    PendingQueue[Pending Subtasks Queue] --> Resolver[_resolve_ready_subtasks]
+    Resolver --> CheckReady{Any Subtasks Ready?}
+    CheckReady -- No & Pending > 0 --> Deadlock[Dependency Deadlock: Mark Failed]
+    CheckReady -- Yes --> ConcurrencyGate[Acquire asyncio.Semaphore]
+    ConcurrencyGate --> ContextInject[Inject shared_context from Predecessors]
+    ContextInject --> Gather[asyncio.gather Parallel Executions]
+    Gather --> EvaluateOutcome{Agent Succeeded?}
+    EvaluateOutcome -- Yes --> Success[Mark COMPLETED, Append Results, Persist DB]
+    Success --> CheckRemaining{Pending Queue Empty?}
+    EvaluateOutcome -- No --> CheckRetries{retry_count <= AGENT_MAX_RETRIES?}
+    CheckRetries -- Yes --> ReQueue[Increment retry_count, Re-queue PENDING]
+    CheckRetries -- No --> TerminalFail[Mark FAILED, Append failed_subtasks, Persist DB]
+    ReQueue --> CheckRemaining
+    TerminalFail --> CheckRemaining
+    CheckRemaining -- No --> Resolver
+    CheckRemaining -- Yes --> ReturnOutputs[Return OrchestratorState]
+```
+
+* **Core Dispatching Mechanics:**
+  1. **Topological Readiness Resolution ([`_resolve_ready_subtasks`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L23)):**
+     * Scans `pending_subtasks` for items whose `dependencies` are a subset of `completed_subtasks`.
+     * Unblocks independent tasks at the current topological depth simultaneously.
+  2. **Cross-Agent Shared Context Injection ([`_shared_context`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L32)):**
+     * Downstream agents (e.g. Coding Agent) automatically receive the textual outputs produced by their prerequisite subtasks (e.g. Research Agent) via `shared_context`, enabling rich multi-agent synthesis without global state pollution.
+  3. **Concurrency Throttling ([`asyncio.Semaphore`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L64)):**
+     * Limits concurrent agent invocations to `settings.AGENT_MAX_CONCURRENCY` (default: 5), protecting system resources and external API rate limits.
+  4. **Parallel Execution Engine ([`asyncio.gather`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L81)):**
+     * Executes all ready subtasks concurrently using `return_exceptions=True` to prevent a single failure from aborting sibling tasks.
+  5. **In-Place Self-Healing Retry Loop:**
+     * Intercepts agent failures and exceptions.
+     * Increments `retry_count`. If `retry_count <= settings.AGENT_MAX_RETRIES` (default: 3), resets status to `PENDING` and re-queues for execution.
+     * If retries are exhausted, sets status to `FAILED`, appends to `failed_subtasks`, and cascades failure down uncompleted dependent branches.
+  6. **Relational Persistence ([`_persist_outcome`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L117)):**
+     * Updates PostgreSQL `SubTaskRecord` with final status and result JSON.
+     * Inserts an [AgentMetric](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/models/database.py#L504) record capturing token counts, cost in USD, and duration.
+     * Logs an [ExecutionLog](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/models/database.py#L427) audit entry (`agent_completed` or `agent_failed`).
+
+---
+
+### Top-Level Orchestration Pipeline & Graph Engine (`src/orchestrator/engine.py`)
+
+* **File Location:** [`src/orchestrator/engine.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/engine.py) & [`src/orchestrator/__init__.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/__init__.py)
+* **Architecture Role:** The master LangGraph state machine compiling the entire multi-agent lifecycle: Planner $\rightarrow$ Dispatcher $\rightarrow$ Validator $\rightarrow$ Synthesizer. Exposes the public async API for executing tasks with timeout protection and database synchronization.
+* **The Master StateGraph Architecture:**
+
+```mermaid
+flowchart TD
+    START([START]) --> Planner[planner: PlannerNode.plan_task]
+    Planner --> Dispatcher[dispatcher: DispatcherNode.dispatch_subtasks]
+    
+    Dispatcher --> after_dispatch{failed_subtasks empty?}
+    after_dispatch -- No --> ErrorHandler[error_handler: Consolidate Errors]
+    after_dispatch -- Yes --> Validator[validator: Verify Schemas & Confidence]
+    
+    Validator --> after_validation{validation_errors empty?}
+    after_validation -- No --> ErrorHandler
+    after_validation -- Yes --> Synthesizer[synthesizer: Merge & Weight Confidence]
+    
+    Synthesizer --> END([END: TaskStatus.COMPLETED])
+    ErrorHandler --> END_FAIL([END: TaskStatus.FAILED])
+```
+
+* **Node & Edge Specifications:**
+  * **Planner Node (`planner`):** Calls [`PlannerNode.plan_task`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/planner.py#L61) to decompose the request into a validated subtask DAG.
+  * **Dispatcher Node (`dispatcher`):** Calls [`DispatcherNode.dispatch_subtasks`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L57) to execute unblocked subtasks concurrently across specialized agents.
+  * **Validator Node ([`validator_node`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/engine.py#L25)):**
+    * Verifies that `failed_subtasks` is empty.
+    * Ensures `subtask_results` contains valid entries.
+    * Re-validates every subtask output against [SubTaskResult](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/models/schemas.py#L442), enforcing non-empty string content and positive confidence scores.
+  * **Synthesizer Node ([`synthesizer_node`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/engine.py#L40)):**
+    * Computes a **token-weighted overall confidence score**:
+      $$\text{overall\_confidence} = \frac{\sum_{i} (\text{result}_i.\text{confidence} \times \max(\text{result}_i.\text{token\_count}, 1))}{\sum_{i} \max(\text{result}_i.\text{token\_count}, 1)}$$
+    * Deduplicates cited source URLs across all agents: `list(dict.fromkeys(...))`.
+    * Compiles the consolidated [TaskResult](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/models/schemas.py#L479) payload with aggregated tokens, costs, and output.
+    * Sets `status = TaskStatus.COMPLETED`.
+  * **Error Handler Node ([`error_handler_node`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/engine.py#L62)):**
+    * Consolidates validation failures or execution exceptions into a unified error trace.
+    * Sets `status = TaskStatus.FAILED`.
+* **Public Service Engine ([`OrchestratorEngine`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/engine.py#L95)):**
+  * `async run_task(task_create: TaskCreate) -> TaskResponse`:
+    * Initializes top-level state via `create_orchestrator_state()`.
+    * Creates an initial `TaskRecord` in PostgreSQL with `status="pending"`.
+    * Enforces a hard global execution timeout: `asyncio.wait_for(..., timeout=settings.ORCHESTRATOR_TIMEOUT)` (default: 300s). Transitions to `TaskStatus.TIMED_OUT` if deadline is exceeded.
+    * Updates `TaskRecord` with final status, token sums, cost in USD, and duration in seconds.
+    * Emits a comprehensive [TaskResponse](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/models/schemas.py#L152) payload to the caller.
+
+---
+
+### Phase 3 Production Safeguards & Resilience Matrix
+
+| Risk / Failure Mode | Mitigating Architecture & Safeguard | Implementation Location |
+|:---|:---|:---|
+| **LLM Provider Outage / 429 / 5xx** | Multi-provider fallback chain via `.with_fallbacks([fallback])`. Seamlessly shifts execution from primary (e.g. Gemini) to secondary (e.g. OpenAI) with zero downtime. | [`src/llm/factory.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/factory.py#L99) |
+| **Circular Dependencies in Subtask DAG** | Recursive Depth-First Search cycle detection with `visiting` and `visited` sets during planning. Rejects cyclical graphs before any agent execution begins. | [`src/orchestrator/planner.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/planner.py#L40) |
+| **Subtask Dependency Deadlocks** | Dispatcher verifies ready subtasks at each DAG tier. If pending subtasks exist but none can be unblocked, terminates deadlock and flags orphaned tasks as failed. | [`src/orchestrator/dispatcher.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L74) |
+| **Transient Agent / Network Failure** | In-place retry loop re-queuing failed subtasks up to `settings.AGENT_MAX_RETRIES` (default: 3) before flagging terminal failure. | [`src/orchestrator/dispatcher.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L97) |
+| **API Rate Limit & Concurrency Starvation** | Asynchronous semaphore concurrency gate (`asyncio.Semaphore(settings.AGENT_MAX_CONCURRENCY)`). Caps parallel agent executions to safe thresholds. | [`src/orchestrator/dispatcher.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/dispatcher.py#L64) |
+| **Runaway Agent ReAct Loops** | Bounded iteration ceilings (`iteration_count >= max_iterations`). Forcibly transitions agents to `finalize` node if ceiling (default: 10) is breached. | [`src/agents/base.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/agents/base.py#L113) |
+| **Tool Execution Exception Crashes** | Exception-shielded execution wrapper `_run_tool` catching arbitrary runtime errors, recording execution duration, and returning structured error payloads. | [`src/tools/base.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/tools/base.py#L79) |
+| **Cross-Agent Token Accounting Race Conditions** | Dedicated, thread-isolated `TokenTrackingCallback` instances attached exclusively to individual agent invocations. Eliminates concurrent memory corruption. | [`src/llm/callbacks.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/llm/callbacks.py#L12) |
+| **Runaway Task Execution Timeouts** | Global pipeline timeout wrapper `asyncio.wait_for(timeout=settings.ORCHESTRATOR_TIMEOUT)`. Automatically transitions zombie tasks to `TIMED_OUT`. | [`src/orchestrator/engine.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/engine.py#L116) |
+| **Malformed Subtask Output Hallucinations** | Validation gate verifying all agent outputs against `SubTaskResult` Pydantic schemas, checking non-empty text and positive confidence thresholds. | [`src/orchestrator/engine.py`](file:///c:/Users/Teja/Downloads/Multi-Agent-Orchestration/src/orchestrator/engine.py#L25) |
+
+---
+
+## 5. Interactive Execution Trace & Metric Lifecycle
 
 ### End-to-End Execution Walkthrough: "Research & Benchmark Vector Stores"
 
@@ -696,7 +1052,7 @@ DevAgent tracks token consumption, latency, and estimated financial costs across
 
 ---
 
-## Repository Structure
+## 6. Repository Structure
 
 ```
 Multi-Agent-Orchestration/
@@ -707,6 +1063,10 @@ Multi-Agent-Orchestration/
 ├── README.md                  # Comprehensive system documentation
 └── src/
     ├── __init__.py            # Application metadata (__version__ = "0.1.0")
+    ├── agents/                # Bounded ReAct agent subgraph & specialized personas
+    │   ├── __init__.py        # Re-exports BaseAgent, AgentRegistry, Research/Coding/Analysis agents
+    │   ├── base.py            # LangGraph ReAct subgraph (reason -> act -> finalize loop)
+    │   └── registry.py        # Factory mapping AgentType to specialized agent instances
     ├── config/                # Centralized configuration & constants
     │   ├── __init__.py        # Exports get_settings, constants, and enums
     │   ├── constants.py       # Enums (AgentType, TaskStatus), prompts, pricing tables
@@ -715,16 +1075,28 @@ Multi-Agent-Orchestration/
     │   ├── __init__.py        # Exports init_db, get_async_session, get_redis_client
     │   ├── redis_client.py    # Async Redis client, connection pool, shared memory, rate limiting
     │   └── session.py         # Async PostgreSQL engine, connection pool, session factories
-    └── models/                # Unified data models & state architecture
-        ├── __init__.py        # Clean exports for schemas, states, and ORM entities
-        ├── database.py        # SQLAlchemy 2.0 ORM models (TaskRecord, SubTaskRecord, etc.)
-        ├── schemas.py         # Pydantic v2 data contracts (TaskCreate, TaskResponse, etc.)
-        └── state.py           # LangGraph TypedDict states with append-only reducers
+    ├── llm/                   # Multi-provider LLM abstraction & metric instrumentation
+    │   ├── __init__.py        # Re-exports factory methods, token tracking callback, cost calculator
+    │   ├── callbacks.py       # Async TokenTrackingCallback intercepting usage across providers
+    │   └── factory.py         # Chat model factory (Google/OpenAI/Anthropic/Azure) with failover
+    ├── models/                # Unified data models & state architecture
+    │   ├── __init__.py        # Clean exports for schemas, states, and ORM entities
+    │   ├── database.py        # SQLAlchemy 2.0 ORM models (TaskRecord, SubTaskRecord, etc.)
+    │   ├── schemas.py         # Pydantic v2 data contracts (TaskCreate, TaskResponse, etc.)
+    │   └── state.py           # LangGraph TypedDict states with append-only reducers
+    ├── orchestrator/          # Top-level DAG orchestration & scheduler pipeline
+    │   ├── __init__.py        # Re-exports OrchestratorEngine, PlannerNode, build_orchestrator_graph
+    │   ├── dispatcher.py      # Dependency-aware concurrent scheduler with retry loop & semaphore
+    │   ├── engine.py          # Master LangGraph pipeline (Planner -> Dispatcher -> Validator -> Synthesizer)
+    │   └── planner.py         # Structured LLM task decomposition with acyclic DAG validation
+    └── tools/                 # Tool contracts and LangChain integration adapter
+        ├── __init__.py        # Re-exports BaseTool, ToolRegistry, ToolResult, tool_to_langchain
+        └── base.py            # Abstract BaseTool, thread-safe ToolRegistry, StructuredTool adapter
 ```
 
 ---
 
-## Getting Started
+## 7. Getting Started
 
 ### Prerequisites
 * Python 3.11 or higher
