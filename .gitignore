@@ -187,6 +187,9 @@ mcp-cache/
 # ----------------------------------------------------------
 # Model downloads / caches
 models/
+# Application source package (not downloaded ML model artifacts).
+!src/models/
+!src/models/*.py
 *.gguf
 *.bin
 *.safetensors
