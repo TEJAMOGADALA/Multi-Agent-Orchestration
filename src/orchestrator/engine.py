@@ -105,9 +105,13 @@ class OrchestratorEngine:
     def graph(self) -> Any:
         return build_orchestrator_graph(self.planner, self.dispatcher)
 
-    async def run_task(self, task_create: TaskCreate) -> TaskResponse:
+    async def run_task(
+        self, task_create: TaskCreate, *, task_id: str | None = None
+    ) -> TaskResponse:
         state = create_orchestrator_state(
-            task_description=task_create.description, priority=int(task_create.priority)
+            task_description=task_create.description,
+            task_id=task_id,
+            priority=int(task_create.priority),
         )
         await self._create_task_record(state, task_create)
         started = datetime.now(UTC)
