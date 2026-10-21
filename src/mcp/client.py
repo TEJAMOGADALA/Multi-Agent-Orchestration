@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, create_model, model_validator
 
@@ -39,33 +39,37 @@ class MCPServerConfig(BaseModel):
 
 
 def _schema_type(schema: dict[str, Any]) -> type[Any]:
-    return {
+    type_name = str(schema.get("type", ""))
+    type_map: dict[str, type[Any]] = {
         "string": str,
         "integer": int,
         "number": float,
         "boolean": bool,
-        "array": list[Any],
-        "object": dict[str, Any],
-    }.get(schema.get("type"), Any)
+        "array": list,
+        "object": dict,
+    }
+    return type_map.get(type_name, Any)
 
 
 def _args_schema(name: str, schema: dict[str, Any] | None) -> type[BaseModel]:
     schema = schema or {}
     required = set(schema.get("required", []))
-    fields: dict[str, tuple[type[Any], Any]] = {}
+    fields: dict[str, Any] = {}
     for key, value in schema.get("properties", {}).items():
         fields[key] = (_schema_type(value), ... if key in required else None)
     model_name = (
         "MCP" + "".join(part.capitalize() for part in name.replace("-", "_").split("_")) + "Args"
     )
-    return create_model(model_name, **fields)
+    from typing import cast
+
+    return cast("type[BaseModel]", create_model(model_name, **fields))
 
 
 class MCPTool(BaseTool):
     """One discoverable remote MCP capability exposed as a local async tool."""
 
-    source: ClassVar[MCPToolSource] = MCPToolSource.MCP
-    supported_agents: ClassVar[set[AgentType]] = set()
+    source: MCPToolSource = MCPToolSource.MCP
+    supported_agents: frozenset[AgentType] = frozenset()
 
     def __init__(self, hub: MCPClientHub, server: MCPServerConfig, tool: Any) -> None:
         self._hub = hub

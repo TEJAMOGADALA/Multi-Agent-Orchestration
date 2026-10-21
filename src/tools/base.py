@@ -24,11 +24,11 @@ class ToolResult:
 
 
 class BaseTool(ABC):
-    name: ClassVar[str]
-    description: ClassVar[str]
-    args_schema: ClassVar[type[BaseModel] | None] = None
-    supported_agents: ClassVar[set[AgentType]] = set()
-    source: ClassVar[MCPToolSource] = MCPToolSource.INTERNAL
+    name: str = ""
+    description: str = ""
+    args_schema: type[BaseModel] | None = None
+    supported_agents: frozenset[AgentType] = frozenset()
+    source: MCPToolSource = MCPToolSource.INTERNAL
 
     @abstractmethod
     async def execute(self, **kwargs: Any) -> ToolResult:

@@ -16,14 +16,11 @@
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 # ----------------------------------------------------------
 # Project root — used to locate .env file
@@ -281,7 +278,7 @@ class Settings(BaseSettings):
         return v.upper().strip() if isinstance(v, str) else v
 
     @model_validator(mode="after")
-    def validate_llm_provider_keys(self) -> "Settings":
+    def validate_llm_provider_keys(self) -> Settings:
         """
         Ensure the selected LLM provider has its API key configured.
         This prevents runtime failures when an agent tries to call the LLM.
@@ -304,9 +301,7 @@ class Settings(BaseSettings):
         # Azure-specific validation
         if provider == "azure_openai":
             if not self.AZURE_OPENAI_ENDPOINT:
-                raise ValueError(
-                    "AZURE_OPENAI_ENDPOINT is required when LLM_PROVIDER=azure_openai"
-                )
+                raise ValueError("AZURE_OPENAI_ENDPOINT is required when LLM_PROVIDER=azure_openai")
             if not self.AZURE_OPENAI_DEPLOYMENT:
                 raise ValueError(
                     "AZURE_OPENAI_DEPLOYMENT is required when LLM_PROVIDER=azure_openai"
@@ -315,7 +310,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_production_settings(self) -> "Settings":
+    def validate_production_settings(self) -> Settings:
         """
         Enforce stricter validation in production:
         - Secret key must be changed from default
@@ -327,12 +322,14 @@ class Settings(BaseSettings):
             if "CHANGE_ME" in self.APP_SECRET_KEY.get_secret_value():
                 raise ValueError(
                     "APP_SECRET_KEY must be changed from default in production. "
-                    "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+                    'Generate one with: python -c "import secrets; '
+                    'print(secrets.token_urlsafe(64))"'
                 )
 
             # Warn about debug mode in production (don't crash, just log)
             if self.APP_DEBUG:
                 import warnings
+
                 warnings.warn(
                     "APP_DEBUG=true in production is not recommended. "
                     "Set APP_DEBUG=false for production deployments.",

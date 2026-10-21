@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
@@ -35,12 +35,14 @@ class GitHubArgs(BaseModel):
 
 
 class CodeExecutorTool(BaseTool):
-    name: ClassVar[str] = "code_executor"
-    description: ClassVar[str] = "Execute Python in an isolated, network-disabled Docker container."
-    args_schema: ClassVar[type[BaseModel]] = CodeExecutionArgs
-    supported_agents: ClassVar[set[AgentType]] = {AgentType.CODING}
+    name: str = "code_executor"
+    description: str = "Execute Python in an isolated, network-disabled Docker container."
+    args_schema: type[BaseModel] | None = CodeExecutionArgs
+    supported_agents: frozenset[AgentType] = frozenset({AgentType.CODING})
 
-    async def execute(self, *, code: str, language: str = "python", stdin: str = "") -> ToolResult:
+    async def execute(  # type: ignore[override]
+        self, *, code: str, language: str = "python", stdin: str = ""
+    ) -> ToolResult:
         if language != "python":
             return ToolResult(error="only Python execution is available", is_error=True)
         settings = get_settings()
@@ -95,14 +97,12 @@ class CodeExecutorTool(BaseTool):
 
 
 class GitHubTool(BaseTool):
-    name: ClassVar[str] = "github"
-    description: ClassVar[str] = (
-        "Read repository files, search code, or list issues through the GitHub API."
-    )
-    args_schema: ClassVar[type[BaseModel]] = GitHubArgs
-    supported_agents: ClassVar[set[AgentType]] = {AgentType.CODING}
+    name: str = "github"
+    description: str = "Read repository files, search code, or list issues through the GitHub API."
+    args_schema: type[BaseModel] | None = GitHubArgs
+    supported_agents: frozenset[AgentType] = frozenset({AgentType.CODING})
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self, *, action: str, repository: str, path: str | None = None, query: str | None = None
     ) -> ToolResult:
         token = get_settings().GITHUB_TOKEN.get_secret_value()

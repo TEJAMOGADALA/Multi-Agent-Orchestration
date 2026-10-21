@@ -12,7 +12,7 @@
 #   from src.db.redis_client import get_redis_client
 # ============================================================
 
-# Imports will be added as modules are created in Steps 2.6–2.7.
+# Imports will be added as modules are created in Steps 2.6-2.7.
 
 from src.db.redis_client import RedisClient, close_redis, get_redis_client, init_redis
 from src.db.session import (
@@ -25,17 +25,16 @@ from src.db.session import (
 )
 
 __all__ = [
+    "RedisClient",
+    "close_db",
+    "close_redis",
+    "get_async_session",
+    "get_engine",
+    "get_managed_session",
+    "get_redis_client",
+    "get_session_factory",
     # Session
     "init_db",
-    "close_db",
-    "get_engine",
-    "get_session_factory",
-    "get_async_session",
-    "get_managed_session",
     # Redis
     "init_redis",
-    "close_redis",
-    "get_redis_client",
-    "RedisClient",
 ]
-

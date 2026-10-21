@@ -52,7 +52,7 @@ class DispatcherNode:
                 shared_context=self._shared_context(state, subtask.get("dependencies", [])),
             )
             completed = await agent.invoke(agent_state)
-            return subtask_id, dict(completed.get("result") or {}), completed
+            return subtask_id, dict(completed.get("result") or {}), dict(completed)
 
     async def dispatch_subtasks(self, state: OrchestratorState) -> dict[str, Any]:
         """Run every currently unblocked DAG level, retrying failed work in place."""
@@ -64,7 +64,7 @@ class DispatcherNode:
         semaphore = asyncio.Semaphore(self.max_concurrency)
 
         while pending:
-            local_state = {
+            local_state: OrchestratorState = {
                 **state,
                 "subtask_states": states,
                 "pending_subtasks": pending,
@@ -83,7 +83,9 @@ class DispatcherNode:
                 return_exceptions=True,
             )
             for expected_id, execution in zip(ready, executions, strict=True):
-                if isinstance(execution, Exception):
+                result: dict[str, Any]
+                raw: dict[str, Any]
+                if isinstance(execution, BaseException):
                     subtask_id, result, raw = expected_id, {}, {"error": str(execution)}
                 else:
                     subtask_id, result, raw = execution

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 import httpx
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -25,14 +23,14 @@ class WebFetchArgs(BaseModel):
 
 
 class WebSearchTool(BaseTool):
-    name: ClassVar[str] = "web_search"
-    description: ClassVar[str] = (
-        "Search the public web and return concise, source-attributed results."
-    )
-    args_schema: ClassVar[type[BaseModel]] = WebSearchArgs
-    supported_agents: ClassVar[set[AgentType]] = {AgentType.RESEARCH}
+    name: str = "web_search"
+    description: str = "Search the public web and return concise, source-attributed results."
+    args_schema: type[BaseModel] | None = WebSearchArgs
+    supported_agents: frozenset[AgentType] = frozenset({AgentType.RESEARCH})
 
-    async def execute(self, *, query: str, max_results: int = 5) -> ToolResult:
+    async def execute(  # type: ignore[override]
+        self, *, query: str, max_results: int = 5
+    ) -> ToolResult:
         api_key = get_settings().TAVILY_API_KEY.get_secret_value()
         if not api_key:
             return ToolResult(error="TAVILY_API_KEY is not configured", is_error=True)
@@ -59,12 +57,12 @@ class WebSearchTool(BaseTool):
 
 
 class WebFetchTool(BaseTool):
-    name: ClassVar[str] = "web_fetch"
-    description: ClassVar[str] = "Fetch bounded textual content from a public URL for research."
-    args_schema: ClassVar[type[BaseModel]] = WebFetchArgs
-    supported_agents: ClassVar[set[AgentType]] = {AgentType.RESEARCH}
+    name: str = "web_fetch"
+    description: str = "Fetch bounded textual content from a public URL for research."
+    args_schema: type[BaseModel] | None = WebFetchArgs
+    supported_agents: frozenset[AgentType] = frozenset({AgentType.RESEARCH})
 
-    async def execute(self, *, url: HttpUrl | str) -> ToolResult:
+    async def execute(self, *, url: HttpUrl | str) -> ToolResult:  # type: ignore[override]
         target = await validate_public_url(str(url))
         async with (
             httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client,
@@ -73,22 +71,19 @@ class WebFetchTool(BaseTool):
             ) as response,
         ):
             response.raise_for_status()
-            content_type = response.headers.get("content-type", "").lower()
-            if not any(
-                kind in content_type for kind in ("text/", "application/json", "application/xml")
-            ):
-                return ToolResult(error="URL did not return textual content", is_error=True)
             chunks: list[bytes] = []
-            received = 0
+            size = 0
             async for chunk in response.aiter_bytes():
-                received += len(chunk)
-                if received > _MAX_RESPONSE_BYTES:
-                    return ToolResult(error="response exceeds the 1 MB limit", is_error=True)
                 chunks.append(chunk)
+                size += len(chunk)
+                if size > _MAX_RESPONSE_BYTES:
+                    break
+        text = b"".join(chunks).decode("utf-8", errors="replace")
         return ToolResult(
             result={
                 "url": target,
-                "content_type": content_type,
-                "content": b"".join(chunks).decode("utf-8", errors="replace"),
+                "content": text[:4000],
+                "truncated": size > _MAX_RESPONSE_BYTES or len(text) > 4000,
+                "bytes_read": size,
             }
         )

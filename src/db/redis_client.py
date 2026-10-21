@@ -33,7 +33,6 @@ import json
 import logging
 from typing import Any
 
-import redis.asyncio as aioredis
 from redis.asyncio import ConnectionPool, Redis
 
 from src.config.constants import (
@@ -55,6 +54,7 @@ _redis_client: RedisClient | None = None
 # ==========================================================
 # REDIS CLIENT — Async wrapper with convenience methods
 # ==========================================================
+
 
 class RedisClient:
     """
@@ -138,10 +138,8 @@ class RedisClient:
             True if set successfully
         """
         if ttl is not None:
-            result = await self._client.setex(key, ttl, value)
-        else:
-            result = await self._client.set(key, value)
-        return bool(result)
+            return bool(await self._client.setex(key, ttl, value))
+        return bool(await self._client.set(key, value))
 
     async def delete(self, *keys: str) -> int:
         """
@@ -408,6 +406,7 @@ class RedisClient:
 # LIFECYCLE — Startup and shutdown hooks
 # ==========================================================
 
+
 async def init_redis() -> None:
     """
     Initialize the Redis client with connection pooling.
@@ -423,7 +422,7 @@ async def init_redis() -> None:
     pool = ConnectionPool.from_url(
         redis_url,
         max_connections=settings.POSTGRES_POOL_SIZE * 2,  # More Redis conns than PG
-        decode_responses=False,   # We handle decoding ourselves
+        decode_responses=False,  # We handle decoding ourselves
         socket_timeout=5.0,
         socket_connect_timeout=5.0,
         retry_on_timeout=True,
@@ -457,6 +456,7 @@ async def close_redis() -> None:
 # ==========================================================
 # CLIENT ACCESS
 # ==========================================================
+
 
 def get_redis_client() -> RedisClient:
     """

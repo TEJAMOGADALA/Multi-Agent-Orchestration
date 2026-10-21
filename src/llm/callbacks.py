@@ -34,7 +34,7 @@ class TokenTrackingCallback(AsyncCallbackHandler):
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": total,
-            "cost_usd": calculate_cost(self.prompt_tokens, self.completion_tokens, self.model),
+            "cost_usd": calculate_cost(self.model, self.prompt_tokens, self.completion_tokens),
         }
 
     def reset(self) -> None:

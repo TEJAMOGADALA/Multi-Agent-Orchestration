@@ -15,8 +15,8 @@ from src.config.constants import AgentType, TaskStatus
 from src.config.settings import Settings, get_settings
 
 __all__ = [
-    "Settings",
-    "get_settings",
     "AgentType",
+    "Settings",
     "TaskStatus",
+    "get_settings",
 ]

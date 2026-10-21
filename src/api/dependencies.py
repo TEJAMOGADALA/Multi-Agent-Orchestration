@@ -11,7 +11,7 @@ from uuid import uuid4
 from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
-from src.config.constants import TaskStatus
+from src.config.constants import Priority, TaskStatus
 from src.config.settings import get_settings
 from src.models.schemas import TaskCreate, TaskResponse, TaskResult
 from src.orchestrator.engine import OrchestratorEngine
@@ -112,8 +112,8 @@ class TaskRuntime:
             return TaskResponse(
                 task_id=record.id,
                 description=record.description,
-                priority=record.priority,
-                status=record.status,
+                priority=Priority(record.priority),
+                status=TaskStatus(record.status),
                 result=result,
                 error=record.error,
                 created_at=record.created_at,

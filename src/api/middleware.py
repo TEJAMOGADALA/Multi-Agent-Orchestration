@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request  # noqa: TC002 - used by FastAPI's runtime decorator.
 from fastapi.responses import JSONResponse
@@ -11,14 +12,21 @@ from fastapi.responses import JSONResponse
 from src.config.constants import API_V1_PREFIX
 from src.config.settings import get_settings
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from starlette.responses import Response
+
 logger = logging.getLogger(__name__)
 
 
 def install_middleware(app: FastAPI) -> None:
     @app.middleware("http")
-    async def guard_request(request: Request, call_next: object) -> object:
+    async def guard_request(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         if not request.url.path.startswith(API_V1_PREFIX):
-            return await call_next(request)  # type: ignore[misc]
+            return await call_next(request)
         settings = get_settings()
         maximum = settings.MAX_REQUEST_SIZE_MB * 1024 * 1024
         if int(request.headers.get("content-length", 0) or 0) > maximum:
@@ -42,7 +50,7 @@ def install_middleware(app: FastAPI) -> None:
         if not allowed:
             return JSONResponse({"detail": "rate limit exceeded"}, status_code=429)
         try:
-            return await call_next(request)  # type: ignore[misc]
+            return await call_next(request)
         except Exception:
             logger.exception("Unhandled API error")
             return JSONResponse({"detail": "internal server error"}, status_code=500)

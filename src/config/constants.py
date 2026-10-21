@@ -14,14 +14,14 @@
 
 from __future__ import annotations
 
-from enum import Enum, IntEnum, unique
+from enum import IntEnum, StrEnum, unique
 
 
 # ==========================================================
 # 1. AGENT TYPES — The specialized agents in the system
 # ==========================================================
 @unique
-class AgentType(str, Enum):
+class AgentType(StrEnum):
     """
     Enumeration of all specialized agents in DevAgent.
     Inherits from str so values serialize cleanly to JSON.
@@ -61,7 +61,7 @@ class AgentType(str, Enum):
 # 2. TASK STATUS — Lifecycle states for a task
 # ==========================================================
 @unique
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """
     Lifecycle states for a user-submitted task.
     Follows a linear progression with branch states for errors.
@@ -74,16 +74,16 @@ class TaskStatus(str, Enum):
                              RETRYING → EXECUTING
     """
 
-    PENDING = "pending"          # Task received, queued for processing
-    PLANNING = "planning"        # Orchestrator is decomposing into subtasks
-    EXECUTING = "executing"      # Agents are working on subtasks
-    VALIDATING = "validating"    # Results being cross-validated
+    PENDING = "pending"  # Task received, queued for processing
+    PLANNING = "planning"  # Orchestrator is decomposing into subtasks
+    EXECUTING = "executing"  # Agents are working on subtasks
+    VALIDATING = "validating"  # Results being cross-validated
     SYNTHESIZING = "synthesizing"  # Combining validated results into response
-    COMPLETED = "completed"      # Successfully finished
-    FAILED = "failed"            # Failed after all retries exhausted
-    RETRYING = "retrying"        # Failed subtask being retried
-    CANCELLED = "cancelled"      # Cancelled by user or system
-    TIMED_OUT = "timed_out"      # Exceeded ORCHESTRATOR_TIMEOUT
+    COMPLETED = "completed"  # Successfully finished
+    FAILED = "failed"  # Failed after all retries exhausted
+    RETRYING = "retrying"  # Failed subtask being retried
+    CANCELLED = "cancelled"  # Cancelled by user or system
+    TIMED_OUT = "timed_out"  # Exceeded ORCHESTRATOR_TIMEOUT
 
     @property
     def is_terminal(self) -> bool:
@@ -111,15 +111,15 @@ class TaskStatus(str, Enum):
 # 3. SUBTASK STATUS — Lifecycle states for individual subtasks
 # ==========================================================
 @unique
-class SubTaskStatus(str, Enum):
+class SubTaskStatus(StrEnum):
     """Status of an individual subtask assigned to an agent."""
 
-    PENDING = "pending"          # Waiting for agent assignment
-    ASSIGNED = "assigned"        # Agent picked up the subtask
+    PENDING = "pending"  # Waiting for agent assignment
+    ASSIGNED = "assigned"  # Agent picked up the subtask
     IN_PROGRESS = "in_progress"  # Agent is actively working
-    COMPLETED = "completed"      # Agent finished successfully
-    FAILED = "failed"            # Agent failed (may be retried)
-    SKIPPED = "skipped"          # Skipped (dependency failed or not needed)
+    COMPLETED = "completed"  # Agent finished successfully
+    FAILED = "failed"  # Agent failed (may be retried)
+    SKIPPED = "skipped"  # Skipped (dependency failed or not needed)
 
 
 # ==========================================================
@@ -153,7 +153,7 @@ class Priority(IntEnum):
 # 5. LLM PROVIDER — Supported LLM providers
 # ==========================================================
 @unique
-class LLMProvider(str, Enum):
+class LLMProvider(StrEnum):
     """Supported LLM providers with their LangChain class paths."""
 
     OPENAI = "openai"
@@ -177,20 +177,20 @@ class LLMProvider(str, Enum):
 # 6. MCP CONSTANTS — Model Context Protocol defaults
 # ==========================================================
 @unique
-class MCPTransport(str, Enum):
+class MCPTransport(StrEnum):
     """Supported MCP transport protocols."""
 
-    STDIO = "stdio"           # Standard I/O (local process)
-    SSE = "sse"               # Server-Sent Events (HTTP)
+    STDIO = "stdio"  # Standard I/O (local process)
+    SSE = "sse"  # Server-Sent Events (HTTP)
     STREAMABLE_HTTP = "streamable_http"  # Streamable HTTP (newest)
 
 
 @unique
-class MCPToolSource(str, Enum):
+class MCPToolSource(StrEnum):
     """Identifies where a tool came from — internal or MCP."""
 
-    INTERNAL = "internal"     # Built-in DevAgent tool (Phase 4)
-    MCP = "mcp"               # Discovered from an external MCP server
+    INTERNAL = "internal"  # Built-in DevAgent tool (Phase 4)
+    MCP = "mcp"  # Discovered from an external MCP server
 
 
 # ==========================================================
@@ -205,7 +205,7 @@ READY_ENDPOINT = "/ready"
 # --- Task Processing ---
 DEFAULT_TASK_PRIORITY = Priority.MEDIUM
 MAX_TASK_DESCRIPTION_CHARS = 10000
-MAX_SUBTASK_DEPTH = 3          # Prevent recursive subtask decomposition
+MAX_SUBTASK_DEPTH = 3  # Prevent recursive subtask decomposition
 
 # --- Agent Behavior ---
 AGENT_SYSTEM_PROMPT_MAX_LENGTH = 5000
@@ -221,10 +221,10 @@ RATE_LIMIT_KEY_PREFIX = "devagent:ratelimit:"
 # --- MCP ---
 MCP_CONFIG_FILENAME = "mcp_config.json"
 MCP_TOOL_SCHEMA_VERSION = "1.0"
-MCP_MAX_TOOLS_PER_SERVER = 100     # Safety limit on tool discovery
+MCP_MAX_TOOLS_PER_SERVER = 100  # Safety limit on tool discovery
 
 # --- Monitoring ---
-METRIC_PREFIX = "devagent_"        # Prometheus metric name prefix
+METRIC_PREFIX = "devagent_"  # Prometheus metric name prefix
 
 # --- Cost Tracking (USD per 1M tokens, approximate) ---
 LLM_COST_PER_MILLION_TOKENS: dict[str, dict[str, float]] = {

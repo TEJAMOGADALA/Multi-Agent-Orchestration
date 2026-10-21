@@ -31,8 +31,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -43,6 +43,9 @@ from sqlalchemy.ext.asyncio import (
 
 from src.config.settings import get_settings
 from src.models.database import Base
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,7 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 # ==========================================================
 # ENGINE CREATION — Async PostgreSQL connection pool
 # ==========================================================
+
 
 def _create_engine() -> AsyncEngine:
     """
@@ -77,18 +81,16 @@ def _create_engine() -> AsyncEngine:
         pool_size=settings.POSTGRES_POOL_SIZE,
         max_overflow=settings.POSTGRES_MAX_OVERFLOW,
         pool_timeout=settings.POSTGRES_POOL_TIMEOUT,
-        pool_pre_ping=True,         # Verify connections before checkout
-        pool_recycle=3600,          # Recycle connections after 1 hour
-
+        pool_pre_ping=True,  # Verify connections before checkout
+        pool_recycle=3600,  # Recycle connections after 1 hour
         # --- Query Execution ---
-        echo=settings.APP_DEBUG,    # Log SQL in debug mode
-        echo_pool=False,            # Don't log pool events (too noisy)
-
+        echo=settings.APP_DEBUG,  # Log SQL in debug mode
+        echo_pool=False,  # Don't log pool events (too noisy)
         # --- Connection Args ---
         connect_args={
             "server_settings": {
                 "application_name": settings.APP_NAME,
-                "jit": "off",       # Disable JIT for faster short queries
+                "jit": "off",  # Disable JIT for faster short queries
             },
         },
     )
@@ -132,6 +134,7 @@ def _create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSess
 # ==========================================================
 # LIFECYCLE — Startup and shutdown hooks
 # ==========================================================
+
 
 async def init_db() -> None:
     """
@@ -179,6 +182,7 @@ async def close_db() -> None:
 # SESSION ACCESS — Getting sessions for database operations
 # ==========================================================
 
+
 def get_engine() -> AsyncEngine:
     """
     Get the current async engine instance.
@@ -202,9 +206,7 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
         RuntimeError: If the database hasn't been initialized yet
     """
     if _session_factory is None:
-        raise RuntimeError(
-            "Session factory not initialized. Call init_db() first."
-        )
+        raise RuntimeError("Session factory not initialized. Call init_db() first.")
     return _session_factory
 
 

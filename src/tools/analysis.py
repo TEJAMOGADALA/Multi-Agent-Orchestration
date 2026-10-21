@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, ClassVar
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field
@@ -28,12 +28,12 @@ class ApiCallArgs(BaseModel):
 
 
 class DatabaseQueryTool(BaseTool):
-    name: ClassVar[str] = "database_query"
-    description: ClassVar[str] = "Run a parameterized, read-only SQL query against DevAgent data."
-    args_schema: ClassVar[type[BaseModel]] = DatabaseQueryArgs
-    supported_agents: ClassVar[set[AgentType]] = {AgentType.ANALYSIS}
+    name: str = "database_query"
+    description: str = "Run a parameterized, read-only SQL query against DevAgent data."
+    args_schema: type[BaseModel] | None = DatabaseQueryArgs
+    supported_agents: frozenset[AgentType] = frozenset({AgentType.ANALYSIS})
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self, *, query: str, parameters: dict[str, Any] | None = None, max_rows: int = 100
     ) -> ToolResult:
         normalized = query.strip().lower()
@@ -71,12 +71,12 @@ class DatabaseQueryTool(BaseTool):
 
 
 class ApiCallerTool(BaseTool):
-    name: ClassVar[str] = "api_caller"
-    description: ClassVar[str] = "Perform a safe, bounded GET request to a public API."
-    args_schema: ClassVar[type[BaseModel]] = ApiCallArgs
-    supported_agents: ClassVar[set[AgentType]] = {AgentType.ANALYSIS}
+    name: str = "api_caller"
+    description: str = "Perform a safe, bounded GET request to a public API."
+    args_schema: type[BaseModel] | None = ApiCallArgs
+    supported_agents: frozenset[AgentType] = frozenset({AgentType.ANALYSIS})
 
-    async def execute(
+    async def execute(  # type: ignore[override]
         self, *, url: str, params: dict[str, str | int | float | bool] | None = None
     ) -> ToolResult:
         target = await validate_public_url(url)

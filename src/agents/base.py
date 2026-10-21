@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
@@ -146,12 +146,12 @@ class BaseAgent:
     async def invoke(self, state: AgentState) -> AgentState:
         """Run the compiled ReAct graph. Agent instances are single-execution objects."""
         self._callback.reset()
-        state = dict(state)
-        state.setdefault("max_iterations", self.max_iterations)
+        input_state: dict[str, Any] = dict(state)
+        input_state.setdefault("max_iterations", self.max_iterations)
         started = perf_counter()
-        output = await self.build_agent_graph().ainvoke(state)
+        output = await self.build_agent_graph().ainvoke(input_state)
         result = dict(output.get("result") or {})
         if result:
             result["duration_seconds"] = perf_counter() - started
             output["result"] = result
-        return output
+        return cast("AgentState", output)
