@@ -33,9 +33,13 @@ class BaseAgent:
         self.agent_type = agent_type
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
-        self.tools = (
-            tools if tools is not None else ToolRegistry.instance().get_tools_for_agent(agent_type)
-        )
+        if tools is None:
+            from src.tools.defaults import register_default_tools
+
+            register_default_tools()
+            self.tools = ToolRegistry.instance().get_tools_for_agent(agent_type)
+        else:
+            self.tools = tools
         self.llm = llm or get_llm_with_fallback()
         self._callback = TokenTrackingCallback(getattr(self.llm, "model_name", "unknown"))
         langchain_tools = [tool_to_langchain(tool) for tool in self.tools]
